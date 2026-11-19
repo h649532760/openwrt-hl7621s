@@ -9,37 +9,39 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: 检出自定义配置
+      - name: 检出自定义文件
         uses: actions/checkout@v4
+        # 避免双层目录陷阱，拉到顶层
+        with:
+          path: src
 
-      - name: 安装编译依赖
+      - name: 安装全套编译依赖
         run: |
           sudo apt-get update
-          sudo apt-get install -y coreutils build-essential asciidoc binutils bzip2 gawk gettext git libncurses5-dev libz-dev patch python3 unzip zlib1g-dev lib32gcc-s1 libc6-dev-i386 subversion flex uglifyjs gcc-multilib g++-multilib p7zip p7zip-full msmtp libssl-dev texinfo libglib2.0-dev xmlto qemu-utils upx libelf-dev autoconf automake libtool autopoint device-tree-compiler antlr3 gperf wget curl swig rsync
+          sudo apt-get install -y coreutils build-essential asciidoc binutils bzip2 gawk gettext git libncurses5-dev libz-dev patch python3 python3-distutils unzip zlib1g-dev lib32gcc-s1 libc6-dev-i386 subversion flex uglifyjs gcc-multilib g++-multilib p7zip p7zip-full msmtp libssl-dev texinfo libglib2.0-dev xmlto qemu-utils upx libelf-dev autoconf automake libtool autopoint device-tree-compiler antlr3 gperf wget curl swig rsync
+          # 确认是 GNU install
+          which install
+          install --version
 
-      - name: 拉取 ImmortalWrt 23.05 官方源码
+      - name: 拉取 ImmortalWrt 23.05
         run: |
           git clone https://github.com/immortalwrt/immortalwrt.git -b openwrt-23.05 --depth 1 immortalwrt
           cd immortalwrt
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      - name: 应用自定义硬件配置
+      - name: 导入 HL7621S 硬件配置
         run: |
-          # 复制设备树到对应目录
-          cp mt7621_hailin_hl7621s.dts immortalwrt/target/linux/ramips/dts/
-          # 追加设备配置到官方 mt7621.mk 末尾
-          cat mt7621.mk >> immortalwrt/target/linux/ramips/image/mt7621.mk
+          cp src/mt7621_hailin_hl7621s.dts immortalwrt/target/linux/ramips/dts/
+          cat src/mt7621.mk >> immortalwrt/target/linux/ramips/image/mt7621.mk
 
-      - name: 生成编译配置（预装 Luci 中文界面）
+      - name: 生成配置｜Luci + 中文
         run: |
           cd immortalwrt
-          # 目标平台与设备
           echo "CONFIG_TARGET_ramips=y" > .config
           echo "CONFIG_TARGET_ramips_mt7621=y" >> .config
           echo "CONFIG_TARGET_ramips_mt7621_DEVICE_hailin_hl7621s=y" >> .config
-          
-          # 预装 Luci 主程序
+
           echo "CONFIG_PACKAGE_luci=y" >> .config
           echo "CONFIG_PACKAGE_luci-mod-admin-full=y" >> .config
           echo "CONFIG_PACKAGE_luci-mod-network=y" >> .config
@@ -48,8 +50,7 @@ jobs:
           echo "CONFIG_PACKAGE_luci-app-firewall=y" >> .config
           echo "CONFIG_PACKAGE_luci-app-opkg=y" >> .config
           echo "CONFIG_PACKAGE_uhttpd=y" >> .config
-          
-          # 预装简体中文语言包
+
           echo "CONFIG_LUCI_LANG_zh_Hans=y" >> .config
           echo "CONFIG_PACKAGE_luci-i18n-base-zh-cn=y" >> .config
           echo "CONFIG_PACKAGE_luci-i18n-firewall-zh-cn=y" >> .config
@@ -57,18 +58,16 @@ jobs:
           echo "CONFIG_PACKAGE_luci-i18n-status-zh-cn=y" >> .config
           echo "CONFIG_PACKAGE_luci-i18n-system-zh-cn=y" >> .config
           echo "CONFIG_PACKAGE_luci-i18n-network-zh-cn=y" >> .config
-          
-          # 亚洲时区支持
+
           echo "CONFIG_PACKAGE_zoneinfo-asia=y" >> .config
-          
           make defconfig
 
-      - name: 编译固件
+      - name: 编译固件（FORCE=1 跳过预检卡死）
         run: |
           cd immortalwrt
-          make -j$(nproc) IGNORE_ERRORS=1 V=s
+          make -j$(nproc) FORCE=1 IGNORE_ERRORS=1 V=s
 
-      - name: 整理输出固件
+      - name: 收集固件
         run: |
           mkdir -p output
           cp immortalwrt/bin/targets/ramips/mt7621/*.bin output/
