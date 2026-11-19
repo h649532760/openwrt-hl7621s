@@ -3,8 +3,8 @@ name: Build ImmortalWrt HL7621S
 on:
   push:
     branches:
-      - main  # 这里请根据你实际的主分支名称填写，比如 master 或 main
-  workflow_dispatch: # 添加这个，方便你以后手动在 Actions 页面点击运行
+      - main  # 请确保这里和你对应的主分支名称一致（如 master）
+  workflow_dispatch:
 
 jobs:
   build:
@@ -28,14 +28,33 @@ jobs:
 
       - name: Apply HL7621S DTS & Image config
         run: |
-          # 1. 复制 DTS 设备树文件到内核源码目录
-          cp -f src/mt7621_hailin_hl7621s.dts immortalwrt/target/linux/ramips/files/arch/mips/boot/dts/
+          # --- 1. 智能寻找并复制 DTS 文件（彻底修复找不到文件的报错）---
+          # 在仓库根目录下找到 .dts 文件，不管它是在 src 里还是外面
+          DTS_FILE=$(find . -maxdepth 2 -name "*hl7621s.dts" | head -n 1)
+          
+          if [ -z "$DTS_FILE" ]; then
+            echo "错误：在仓库中没有找到 .dts 文件，编译终止！"
+            exit 1
+          else
+            echo "找到 DTS 文件: $DTS_FILE"
+            # 创建目标目录（如果 ImmortalWrt 原版没有这个 files 目录的话）
+            mkdir -p immortalwrt/target/linux/ramips/files/arch/mips/boot/dts/
+            # 复制过去并重命名为标准文件名
+            cp -f "$DTS_FILE" immortalwrt/target/linux/ramips/files/arch/mips/boot/dts/mt7621_hailin_hl7621s.dts
+          fi
 
-          # 2. 安全追加 mk 设备规则
+          # --- 2. 安全追加 mk 设备规则 ---
           # 先彻底删除原版中可能已存在的旧定义，再追加你的文件，防止 "overriding recipe" 报错
-          sed -i '/define Device\/hailin_hl7621s/,/^endef/d' immortalwrt/target/linux/ramips/image/mt7621.mk
-          sed -i 's/[ \t]*hailin_hl7621s//g' immortalwrt/target/linux/ramips/image/mt7621.mk
-          cat src/mt7621.mk >> immortalwrt/target/linux/ramips/image/mt7621.mk
+          # 同样使用 find 来查找 mk 文件，防止路径不对
+          MK_FILE=$(find . -maxdepth 2 -name "mt7621.mk" | head -n 1)
+          
+          if [ -z "$MK_FILE" ]; then
+            echo "警告：没有找到 mt7621.mk 文件，跳过 mk 追加步骤。"
+          else
+            sed -i '/define Device\/hailin_hl7621s/,/^endef/d' immortalwrt/target/linux/ramips/image/mt7621.mk
+            sed -i 's/[ \t]*hailin_hl7621s//g' immortalwrt/target/linux/ramips/image/mt7621.mk
+            cat "$MK_FILE" >> immortalwrt/target/linux/ramips/image/mt7621.mk
+          fi
 
       - name: Generate .config
         run: |
