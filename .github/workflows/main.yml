@@ -9,7 +9,7 @@ on:
 jobs:
   build:
     name: Build Firmware
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     timeout-minutes: 180
     steps:
       - name: Checkout source files
@@ -17,12 +17,20 @@ jobs:
         with:
           path: src
 
-      - name: Install build dependencies
+      - name: Install build dependencies (Core)
         run: |
           sudo apt-get update -y
+          # 第一步：单独安装 coreutils (包含 install)，确保系统基础命令存在
+          sudo apt-get install -y coreutils build-essential gcc-multilib g++-multilib lib32gcc-s1 libc6-dev-i386
+          
+          # 显式验证 install 是否成功
+          which install && install --version || (echo "Error: GNU install not found!"; exit 1)
+
+      - name: Install build dependencies (Extra)
+        run: |
+          sudo apt-get update -y
+          # 第二步：安装剩余依赖，去掉所有 apt 不存在的包
           sudo apt-get install -y \
-            coreutils \
-            build-essential \
             asciidoc \
             binutils \
             bzip2 \
@@ -36,38 +44,23 @@ jobs:
             python3-setuptools \
             unzip \
             zlib1g-dev \
-            lib32gcc-s1 \
-            libc6-dev-i386 \
             subversion \
             flex \
-            uglifyjs \
-            gcc-multilib \
-            g++-multilib \
             p7zip \
             p7zip-full \
-            msmtp \
             libssl-dev \
-            texinfo \
             libglib2.0-dev \
-            xmlto \
-            qemu-utils \
-            upx \
             libelf-dev \
             autoconf \
             automake \
             libtool \
             autopoint \
             device-tree-compiler \
-            antlr3 \
             gperf \
             wget \
             curl \
             swig \
             rsync
-          # 锁定 GNU install，前置导出
-          echo "INSTALL=$(command -v install)" >> $GITHUB_ENV
-          command -v install
-          install --version
 
       - name: Clone ImmortalWrt 23.05
         run: |
@@ -108,15 +101,13 @@ jobs:
 
           CONFIG_PACKAGE_zoneinfo-asia=y
           EOF
-          # 关键：生成配置同时带 FORCE，强制通过 prereq
-          make defconfig FORCE=1
+          make defconfig
 
       - name: Build firmware
         run: |
           cd immortalwrt
-          export FORCE=1
-          export IGNORE_ERRORS=1
-          make -j$(nproc) V=s
+          # 去掉 FORCE=1，让编译系统正常检查依赖
+          make -j$(nproc) IGNORE_ERRORS=1 V=s
 
       - name: Collect firmware artifacts
         run: |
