@@ -1,123 +1,63 @@
-name: ImmortalWrt 23.05 编译 HL7621S
+name: Build ImmortalWrt HL7621S
 
 on:
   push:
     branches:
-      - main
-  workflow_dispatch:
+      - main  # 或者你使用的分支名，如 master
+  # 如果不想每次 push 都编译，可以把上面 push 部分注释掉，只用 schedule 或 workflow_dispatch
 
 jobs:
   build:
-    name: Build Firmware
-    runs-on: ubuntu-22.04
-    timeout-minutes: 180
+    runs-on: ubuntu-latest
+
     steps:
       - name: Checkout source files
         uses: actions/checkout@v4
-        with:
-          path: src
 
-      - name: Install build dependencies (Core)
+      - name: Setup Environment
         run: |
-          sudo apt-get update -y
-          # 第一步：单独安装 coreutils (包含 install)，确保系统基础命令存在
-          sudo apt-get install -y coreutils build-essential gcc-multilib g++-multilib lib32gcc-s1 libc6-dev-i386
-          
-          # 显式验证 install 是否成功
-          which install && install --version || (echo "Error: GNU install not found!"; exit 1)
-
-      - name: Install build dependencies (Extra)
-        run: |
-          sudo apt-get update -y
-          # 第二步：安装剩余依赖，去掉所有 apt 不存在的包
-          sudo apt-get install -y \
-            asciidoc \
-            binutils \
-            bzip2 \
-            gawk \
-            gettext \
-            git \
-            libncurses5-dev \
-            libz-dev \
-            patch \
-            python3 \
-            python3-setuptools \
-            unzip \
-            zlib1g-dev \
-            subversion \
-            flex \
-            p7zip \
-            p7zip-full \
-            libssl-dev \
-            libglib2.0-dev \
-            libelf-dev \
-            autoconf \
-            automake \
-            libtool \
-            autopoint \
-            device-tree-compiler \
-            gperf \
-            wget \
-            curl \
-            swig \
-            rsync
+          sudo apt-get update
+          sudo apt-get -y install build-essential clang flex bison g++ gawk gcc-multilib g++-multilib gettext git libncurses-dev libssl-dev python3-distutils python3-setuptools rsync swig unzip zlib1g-dev file wget
 
       - name: Clone ImmortalWrt 23.05
         run: |
-          git clone --depth 1 -b openwrt-23.05 https://github.com/immortalwrt/immortalwrt.git immortalwrt
-          cd immortalwrt
-          ./scripts/feeds update -a
-          ./scripts/feeds install -a
+          git clone -b openwrt-23.05 --single-branch https://github.com/immortalwrt/immortalwrt.git
 
       - name: Apply HL7621S DTS & Image config
         run: |
-          cp src/mt7621_hailin_hl7621s.dts immortalwrt/target/linux/ramips/dts/
+          # 1. 复制 DTS 设备树文件到内核源码目录
+          cp -f src/mt7621_hailin_hl7621s.dts immortalwrt/target/linux/ramips/files/arch/mips/boot/dts/
+
+          # 2. 【核心修复】安全追加 mk 设备规则
+          # 先删除官方源码里可能已存在的重复定义，再追加你的文件，防止 "overriding recipe" 报错
+          sed -i '/define Device\/hailin_hl7621s/,/^endef/d' immortalwrt/target/linux/ramips/image/mt7621.mk
+          sed -i 's/\s*hailin_hl7621s//g' immortalwrt/target/linux/ramips/image/mt7621.mk
           cat src/mt7621.mk >> immortalwrt/target/linux/ramips/image/mt7621.mk
 
       - name: Generate .config (LuCI + 简体中文)
         run: |
           cd immortalwrt
-          cat > .config << EOF
-          CONFIG_TARGET_ramips=y
-          CONFIG_TARGET_ramips_mt7621=y
-          CONFIG_TARGET_ramips_mt7621_DEVICE_hailin_hl7621s=y
-
-          CONFIG_PACKAGE_luci=y
-          CONFIG_PACKAGE_luci-mod-admin-full=y
-          CONFIG_PACKAGE_luci-mod-network=y
-          CONFIG_PACKAGE_luci-mod-status=y
-          CONFIG_PACKAGE_luci-mod-system=y
-          CONFIG_PACKAGE_luci-app-firewall=y
-          CONFIG_PACKAGE_luci-app-opkg=y
-          CONFIG_PACKAGE_uhttpd=y
-
-          CONFIG_LUCI_LANG_zh_Hans=y
-          CONFIG_PACKAGE_luci-i18n-base-zh-cn=y
-          CONFIG_PACKAGE_luci-i18n-firewall-zh-cn=y
-          CONFIG_PACKAGE_luci-i18n-opkg-zh-cn=y
-          CONFIG_PACKAGE_luci-i18n-status-zh-cn=y
-          CONFIG_PACKAGE_luci-i18n-system-zh-cn=y
-          CONFIG_PACKAGE_luci-i18n-network-zh-cn=y
-
-          CONFIG_PACKAGE_zoneinfo-asia=y
-          EOF
+          echo "CONFIG_TARGET_ramips_mt7621=y" >> .config
+          echo "CONFIG_TARGET_ramips_mt7621_DEVICE_hailin_hl7621s=y" >> .config
+          
+          # 默认包含 LuCI 和简体中文
+          echo "CONFIG_PACKAGE_luci=y" >> .config
+          echo "CONFIG_PACKAGE_luci-i18n-base-zh-cn=y" >> .config
+          
+          # 生成依赖并处理冲突（你原本的 IGNORE_ERRORS=1 建议去掉，以便及时发现问题）
           make defconfig
 
       - name: Build firmware
         run: |
           cd immortalwrt
-          # 去掉 FORCE=1，让编译系统正常检查依赖
-          make -j$(nproc) IGNORE_ERRORS=1 V=s
+          # 使用所有 CPU 核心加速编译
+          make -j$(nproc) V=s
 
       - name: Collect firmware artifacts
-        run: |
-          mkdir -p output
-          cp -f immortalwrt/bin/targets/ramips/mt7621/*.bin output/
-          cp -f immortalwrt/bin/targets/ramips/mt7621/*.manifest output/ 2>/dev/null || true
-
-      - name: Upload firmware
+        if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: ImmortalWrt-hl7621s-firmware
-          path: output/*
-          if-no-files-found: error
+          name: HL7621S Firmware
+          path: |
+            immortalwrt/bin/targets/ramips/mt7621/*hailin*factory.bin
+            immortalwrt/bin/targets/ramips/mt7621/*hailin*sysupgrade.bin
