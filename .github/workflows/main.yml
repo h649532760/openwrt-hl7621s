@@ -64,7 +64,9 @@ jobs:
             curl \
             swig \
             rsync
-          which install
+          # 锁定 GNU install，前置导出
+          echo "INSTALL=$(command -v install)" >> $GITHUB_ENV
+          command -v install
           install --version
 
       - name: Clone ImmortalWrt 23.05
@@ -106,12 +108,15 @@ jobs:
 
           CONFIG_PACKAGE_zoneinfo-asia=y
           EOF
-          make defconfig
+          # 关键：生成配置同时带 FORCE，强制通过 prereq
+          make defconfig FORCE=1
 
       - name: Build firmware
         run: |
           cd immortalwrt
-          make -j$(nproc) FORCE=1 IGNORE_ERRORS=1 V=s
+          export FORCE=1
+          export IGNORE_ERRORS=1
+          make -j$(nproc) V=s
 
       - name: Collect firmware artifacts
         run: |
