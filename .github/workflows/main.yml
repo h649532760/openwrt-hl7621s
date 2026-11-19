@@ -3,7 +3,7 @@ name: Build ImmortalWrt HL7621S
 on:
   push:
     branches:
-      - main  # 请确保这里和你对应的主分支名称一致（如 master）
+      - main
   workflow_dispatch:
 
 jobs:
@@ -17,7 +17,9 @@ jobs:
       - name: Setup Environment
         run: |
           sudo apt-get update
-          # 适配新版 Ubuntu 24.04，去除了 python3-distutils
+          # 【新增修复】补充安装 coreutils，解决 Checking 'install'... failed 报错
+          sudo apt-get -y install coreutils
+          # 适配 Ubuntu 24.04 的基础依赖
           sudo apt-get -y install build-essential clang flex bison g++ gawk \
           gcc-multilib g++-multilib gettext git libncurses5-dev libssl-dev \
           python3-setuptools rsync swig unzip zlib1g-dev file wget
@@ -28,26 +30,19 @@ jobs:
 
       - name: Apply HL7621S DTS & Image config
         run: |
-          # --- 1. 智能寻找并复制 DTS 文件（彻底修复找不到文件的报错）---
-          # 在仓库根目录下找到 .dts 文件，不管它是在 src 里还是外面
+          # 智能寻找并复制 DTS 文件，防止路径不匹配报错
           DTS_FILE=$(find . -maxdepth 2 -name "*hl7621s.dts" | head -n 1)
-          
           if [ -z "$DTS_FILE" ]; then
             echo "错误：在仓库中没有找到 .dts 文件，编译终止！"
             exit 1
           else
             echo "找到 DTS 文件: $DTS_FILE"
-            # 创建目标目录（如果 ImmortalWrt 原版没有这个 files 目录的话）
             mkdir -p immortalwrt/target/linux/ramips/files/arch/mips/boot/dts/
-            # 复制过去并重命名为标准文件名
             cp -f "$DTS_FILE" immortalwrt/target/linux/ramips/files/arch/mips/boot/dts/mt7621_hailin_hl7621s.dts
           fi
 
-          # --- 2. 安全追加 mk 设备规则 ---
-          # 先彻底删除原版中可能已存在的旧定义，再追加你的文件，防止 "overriding recipe" 报错
-          # 同样使用 find 来查找 mk 文件，防止路径不对
+          # 安全追加 mk 设备规则，先清理旧定义防止重复报错
           MK_FILE=$(find . -maxdepth 2 -name "mt7621.mk" | head -n 1)
-          
           if [ -z "$MK_FILE" ]; then
             echo "警告：没有找到 mt7621.mk 文件，跳过 mk 追加步骤。"
           else
@@ -61,10 +56,8 @@ jobs:
           cd immortalwrt
           echo "CONFIG_TARGET_ramips_mt7621=y" >> .config
           echo "CONFIG_TARGET_ramips_mt7621_DEVICE_hailin_hl7621s=y" >> .config
-          # 默认包含 LuCI 和简体中文
           echo "CONFIG_PACKAGE_luci=y" >> .config
           echo "CONFIG_PACKAGE_luci-i18n-base-zh-cn=y" >> .config
-          # 更新 feeds 并生成完整依赖配置
           ./scripts/feeds update -a
           ./scripts/feeds install -a
           make defconfig
@@ -72,7 +65,7 @@ jobs:
       - name: Build firmware
         run: |
           cd immortalwrt
-          # 使用所有 CPU 核心加速编译，V=s 输出详细日志方便排查
+          # 使用所有 CPU 核心加速编译，开启 V=s 输出详细日志
           make -j$(nproc) V=s
 
       - name: Collect firmware artifacts
