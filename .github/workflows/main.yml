@@ -17,12 +17,15 @@ jobs:
       - name: Setup Environment
         run: |
           sudo apt-get update
-          # 【新增修复】补充安装 coreutils，解决 Checking 'install'... failed 报错
-          sudo apt-get -y install coreutils
-          # 适配 Ubuntu 24.04 的基础依赖
+          # 基础依赖安装
           sudo apt-get -y install build-essential clang flex bison g++ gawk \
           gcc-multilib g++-multilib gettext git libncurses5-dev libssl-dev \
-          python3-setuptools rsync swig unzip zlib1g-dev file wget
+          python3-setuptools rsync swig unzip zlib1g-dev file wget coreutils
+
+          # 【终极修复】强制建立标准 GNU install 的软链接（ginstall）以通过检查
+          mkdir -p ~/bin
+          cp $(which install) ~/bin/ginstall
+          echo "$HOME/bin" >> $GITHUB_PATH
 
       - name: Clone ImmortalWrt 23.05
         run: |
@@ -30,7 +33,7 @@ jobs:
 
       - name: Apply HL7621S DTS & Image config
         run: |
-          # 智能寻找并复制 DTS 文件，防止路径不匹配报错
+          # 1. 智能寻找并复制 DTS 文件
           DTS_FILE=$(find . -maxdepth 2 -name "*hl7621s.dts" | head -n 1)
           if [ -z "$DTS_FILE" ]; then
             echo "错误：在仓库中没有找到 .dts 文件，编译终止！"
@@ -38,10 +41,10 @@ jobs:
           else
             echo "找到 DTS 文件: $DTS_FILE"
             mkdir -p immortalwrt/target/linux/ramips/files/arch/mips/boot/dts/
-            cp -f "$DTS_FILE" immortalwrt/target/linux/ramips/files/arch/mips/boot/dts/mt7621_hailin_hl7621s.dts
+            cp -f "$DTS_FILE" immortalwrt/target/linux/ramips/files/arch/mips/boot/dts/mt7621_hl7621s.dts
           fi
 
-          # 安全追加 mk 设备规则，先清理旧定义防止重复报错
+          # 2. 安全追加 mk 设备规则，先清理旧定义防止重复报错
           MK_FILE=$(find . -maxdepth 2 -name "mt7621.mk" | head -n 1)
           if [ -z "$MK_FILE" ]; then
             echo "警告：没有找到 mt7621.mk 文件，跳过 mk 追加步骤。"
@@ -65,7 +68,6 @@ jobs:
       - name: Build firmware
         run: |
           cd immortalwrt
-          # 使用所有 CPU 核心加速编译，开启 V=s 输出详细日志
           make -j$(nproc) V=s
 
       - name: Collect firmware artifacts
