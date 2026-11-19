@@ -3,8 +3,8 @@ name: Build ImmortalWrt HL7621S
 on:
   push:
     branches:
-      - main  # 或者你使用的分支名，如 master
-  # 如果不想每次 push 都编译，可以把上面 push 部分注释掉，只用 schedule 或 workflow_dispatch
+      - main  # 这里请根据你实际的主分支名称填写，比如 master 或 main
+  workflow_dispatch: # 添加这个，方便你以后手动在 Actions 页面点击运行
 
 jobs:
   build:
@@ -17,7 +17,10 @@ jobs:
       - name: Setup Environment
         run: |
           sudo apt-get update
-          sudo apt-get -y install build-essential clang flex bison g++ gawk gcc-multilib g++-multilib gettext git libncurses-dev libssl-dev python3-distutils python3-setuptools rsync swig unzip zlib1g-dev file wget
+          # 适配新版 Ubuntu 24.04，去除了 python3-distutils
+          sudo apt-get -y install build-essential clang flex bison g++ gawk \
+          gcc-multilib g++-multilib gettext git libncurses5-dev libssl-dev \
+          python3-setuptools rsync swig unzip zlib1g-dev file wget
 
       - name: Clone ImmortalWrt 23.05
         run: |
@@ -28,36 +31,36 @@ jobs:
           # 1. 复制 DTS 设备树文件到内核源码目录
           cp -f src/mt7621_hailin_hl7621s.dts immortalwrt/target/linux/ramips/files/arch/mips/boot/dts/
 
-          # 2. 【核心修复】安全追加 mk 设备规则
-          # 先删除官方源码里可能已存在的重复定义，再追加你的文件，防止 "overriding recipe" 报错
+          # 2. 安全追加 mk 设备规则
+          # 先彻底删除原版中可能已存在的旧定义，再追加你的文件，防止 "overriding recipe" 报错
           sed -i '/define Device\/hailin_hl7621s/,/^endef/d' immortalwrt/target/linux/ramips/image/mt7621.mk
-          sed -i 's/\s*hailin_hl7621s//g' immortalwrt/target/linux/ramips/image/mt7621.mk
+          sed -i 's/[ \t]*hailin_hl7621s//g' immortalwrt/target/linux/ramips/image/mt7621.mk
           cat src/mt7621.mk >> immortalwrt/target/linux/ramips/image/mt7621.mk
 
-      - name: Generate .config (LuCI + 简体中文)
+      - name: Generate .config
         run: |
           cd immortalwrt
           echo "CONFIG_TARGET_ramips_mt7621=y" >> .config
           echo "CONFIG_TARGET_ramips_mt7621_DEVICE_hailin_hl7621s=y" >> .config
-          
           # 默认包含 LuCI 和简体中文
           echo "CONFIG_PACKAGE_luci=y" >> .config
           echo "CONFIG_PACKAGE_luci-i18n-base-zh-cn=y" >> .config
-          
-          # 生成依赖并处理冲突（你原本的 IGNORE_ERRORS=1 建议去掉，以便及时发现问题）
+          # 更新 feeds 并生成完整依赖配置
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
           make defconfig
 
       - name: Build firmware
         run: |
           cd immortalwrt
-          # 使用所有 CPU 核心加速编译
+          # 使用所有 CPU 核心加速编译，V=s 输出详细日志方便排查
           make -j$(nproc) V=s
 
       - name: Collect firmware artifacts
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: HL7621S Firmware
+          name: HL7621S_Firmware
           path: |
             immortalwrt/bin/targets/ramips/mt7621/*hailin*factory.bin
             immortalwrt/bin/targets/ramips/mt7621/*hailin*sysupgrade.bin
