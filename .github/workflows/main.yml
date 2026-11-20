@@ -64,6 +64,9 @@ jobs:
             curl \
             swig \
             rsync
+          # 强制确认 GNU install
+          which install
+          install --version
           echo "INSTALL=$(command -v install)" >> $GITHUB_ENV
 
       - name: Clone clean ImmortalWrt 23.05
@@ -78,12 +81,10 @@ jobs:
         shell: bash
         run: |
           set +e
-          # 复制设备树
           cp src/mt7621_hailin_hl7621s.dts immortalwrt/target/linux/ramips/dts/
-          # 追加设备定义到官方mk末尾
           if ! grep -q "hailin_hl7621s" immortalwrt/target/linux/ramips/image/mt7621.mk; then
               cat src/mt7621.mk >> immortalwrt/target/linux/ramips/image/mt7621.mk
-              echo "✅ 设备配置已追加"
+              echo "✅ 追加设备定义成功"
           fi
 
       - name: Generate .config
@@ -91,23 +92,21 @@ jobs:
         run: |
           set +e
           cd immortalwrt
-          # 只选核心设备，所有软件包由mk里的DEVICE_PACKAGES控制，避免配置名不匹配
           echo "CONFIG_TARGET_ramips=y" > .config
           echo "CONFIG_TARGET_ramips_mt7621=y" >> .config
           echo "CONFIG_TARGET_ramips_mt7621_DEVICE_hailin_hl7621s=y" >> .config
-          # 强制绕过预检
+          # 这里也要带 FORCE=1
           make defconfig FORCE=1
-          echo "📌 defconfig 返回码：$?"
+          echo "defconfig return: $?"
 
       - name: Build firmware
         shell: bash
         run: |
           set +e
           cd immortalwrt
-          export FORCE=1
-          export IGNORE_ERRORS=1
-          make -j4 V=s
-          echo "📌 编译返回码：$?"
+          # 重点！FORCE=1 作为 make 参数！！！
+          make -j4 V=s FORCE=1 IGNORE_ERRORS=1
+          echo "build return: $?"
 
       - name: Collect firmware
         run: |
