@@ -71,13 +71,14 @@ jobs:
         run: |
           set -e
           rm -rf ${{ env.SRC_DIR }}
-          git clone --depth 1 --branch ${{ env.BRANCH }} https://github.com/ImmortalWrt/immortalwrt.git ${{ env.SRC_DIR }}
+          # 官方推荐克隆参数，替换 depth=1，提高 feeds 更新成功率
+          git clone --single-branch --filter=blob:none --branch ${{ env.BRANCH }} https://github.com/ImmortalWrt/immortalwrt.git ${{ env.SRC_DIR }}
           cd ${{ env.SRC_DIR }}
           if [ "${{ env.USE_MIRROR }}" = "true" ]; then
             sed -i 's/https:\/\/github.com\//https:\/\/mirror.ghproxy.com\/https:\/\/github.com\//g' feeds.conf.default
           fi
+          # 只删除整个 feeds 目录（首次初始化），不要进去删里面子文件夹！！
           rm -rf ./feeds
-          mkdir -p ./feeds
 
       - name: Inject Custom Files
         run: |
@@ -94,7 +95,7 @@ jobs:
         run: |
           set -e
           cd ${{ env.SRC_DIR }}
-          rm -rf feeds/*
+          # !!!重点：交给脚本自己处理，禁止 rm -rf feeds/*
           ./scripts/feeds clean
           ./scripts/feeds update -a
           ./scripts/feeds install -a
