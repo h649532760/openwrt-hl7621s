@@ -1,19 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0-or-later OR MIT
-//
-// Hailin HL7621S  ——  OpenWrt 23.05 / kernel 5.15
-// 放置位置：target/linux/ramips/dts/mt7621_hailin_hl7621s.dts
-//
-// 硬件依据（全部来自厂家 18.06 出厂固件的 live DT / debugfs / 分区表）：
-//   - 分区：u-boot 0x30000 / env 0x10000 / factory 0x10000 / firmware 0x50000+0xfb0000
-//   - MAC：factory 分区 0xe000
-//   - LED/按键：led4 GPIO14 ACTIVE_HIGH -> power
-//               led5 GPIO13 ACTIVE_LOW  -> 4g
-//               status GPIO16 ACTIVE_LOW -> wifi
-//               reset GPIO17 ACTIVE_LOW
-//   - pinctrl：厂家释放 jtag/rgmii2/wdt（rgmii1必须保留给内置交换机数据通路）
-//   - 无线：mini-PCIe SparkLAN WPEA-121NW = Atheros AR9382 -> ath9k
-//   - U-Boot：Ralink SDK 1.1.3 (2015)，支持 lzma；
-//             真正限制是「解压后」大小约 8 MiB，不是 uImage 的 4 MiB
+/*
+ * Hailin HL7621S —— OpenWrt 23.05 / kernel 5.15
+ * 硬件依据：厂家 18.06 出厂固件分区表 / 引脚定义
+ * 分区：u-boot 0x30000 / env 0x10000 / factory 0x10000 / firmware 0x50000+0xfb0000
+ */
 
 #include "mt7621.dtsi"
 
@@ -38,7 +28,7 @@
 
 	memory@0 {
 		device_type = "memory";
-		reg = <0x0 0x10000000>;		/* 256 MiB */
+		reg = <0x0 0x10000000>; /* 256 MiB */
 	};
 
 	leds {
@@ -113,15 +103,13 @@
 			};
 
 			partition@50000 {
-				compatible = "denx,uimage";
 				label = "firmware";
-				reg = <0x050000 0xfb0000>;	/* 16064 KiB */
+				reg = <0x050000 0xfb0000>; /* 16064 KiB */
 			};
 		};
 	};
 };
 
-/* 补充RGMII时序，适配内置交换机数据采样，解决RX包数为0的问题 */
 &gmac0 {
 	phy-mode = "rgmii-rxid";
 	nvmem-cells = <&macaddr_factory_e000>;
@@ -161,19 +149,11 @@
 	};
 };
 
-/*
- * mini-PCIe 无线卡：WPEA-121NW = AR9382 (2T2R 双频, ath9k, PCI 168c:0030)
- * 校准数据在网卡自身 EEPROM，DT 里不需要 mediatek,mtd-eeprom / mt76 节点。
- *
- * 注意：mt7621.dtsi 里 pcie 节点写死了 reset-gpios = <&gpio 19 GPIO_ACTIVE_LOW>，
- * 因此 state_default 必须把 rgmii2 组释放成 GPIO，否则 GPIO19 无法作为复位脚。
- * 如果 lspci 看不到网卡，先试把极性改成 GPIO_ACTIVE_HIGH。
- */
+/* mini-PCIe 无线：AR9382 双频 ath9k，校准数据在网卡 EEPROM */
 &pcie {
 	status = "okay";
 };
 
-/* 厂家固件里 sdhci 是 okay，说明板上有 SD 卡槽 */
 &sdhci {
 	status = "okay";
 };
@@ -182,12 +162,6 @@
 	status = "okay";
 };
 
-/*
- * pin group 释放修正：
- *   仅释放 jtag / rgmii2 / wdt -> gpio
- *   rgmii1 必须保留为以太网功能，它是 gmac0 连接内置交换机的数据通路
- *   mdio 不能释放（MT7530 交换机管理总线）
- */
 &state_default {
 	gpio {
 		groups = "jtag", "rgmii2", "wdt";
@@ -195,12 +169,6 @@
 	};
 };
 
-/*
- * 以太网引脚配置修正：
- *   rgmii1_pins = gmac0 数据通路（连接内置交换机）
- *   mdio_pins   = 交换机管理总线
- *   已禁用 gmac1，因此不引用 rgmii2_pins，避免引脚冲突报错
- */
 &ethernet {
 	pinctrl-names = "default";
 	pinctrl-0 = <&rgmii1_pins &mdio_pins>;
