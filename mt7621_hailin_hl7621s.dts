@@ -1,10 +1,4 @@
 // SPDX-License-Identifier: GPL-2.0-or-later OR MIT
-/*
- * Hailin HL7621S —— OpenWrt 23.05 / kernel 5.15
- * 硬件依据：厂家 18.06 出厂固件分区表 / 引脚定义
- * 分区：u-boot 0x30000 / env 0x10000 / factory 0x10000 / firmware 0x50000+0xfb0000
- */
-
 #include "mt7621.dtsi"
 
 #include <dt-bindings/gpio/gpio.h>
@@ -22,29 +16,27 @@
 		label-mac-device = &gmac0;
 	};
 
+    // ========== 核心修改：补全启动参数兜底 ==========
 	chosen {
-		bootargs = "console=ttyS0,115200";
+		bootargs = "console=ttyS0,115200 root=/dev/mtdblock3 rootfstype=squashfs init=/init";
 	};
-
-	memory@0 {
-		device_type = "memory";
-		reg = <0x0 0x10000000>; /* 256 MiB */
-	};
+    // ==============================================
 
 	leds {
 		compatible = "gpio-leds";
 
-		led_power: led-power {
+		led_power: power {
 			label = "green:power";
-			gpios = <&gpio 14 GPIO_ACTIVE_HIGH>;
+			gpios = <&gpio 14 GPIO_ACTIVE_LOW>;
+			default-state = "on";
 		};
 
-		led_4g: led-4g {
+		4g {
 			label = "green:4g";
 			gpios = <&gpio 13 GPIO_ACTIVE_LOW>;
 		};
 
-		led_wifi: led-wifi {
+		wifi {
 			label = "green:wifi";
 			gpios = <&gpio 16 GPIO_ACTIVE_LOW>;
 		};
@@ -67,8 +59,6 @@
 	flash@0 {
 		compatible = "jedec,spi-nor";
 		reg = <0>;
-		#address-cells = <1>;
-		#size-cells = <1>;
 		spi-max-frequency = <10000000>;
 		broken-flash-reset;
 
@@ -92,64 +82,75 @@
 				label = "factory";
 				reg = <0x040000 0x010000>;
 				read-only;
-
-				compatible = "nvmem-cells";
-				#address-cells = <1>;
-				#size-cells = <1>;
-
-				macaddr_factory_e000: macaddr@e000 {
-					reg = <0xe000 0x6>;
-				};
 			};
 
 			partition@50000 {
+				compatible = "denx,uimage";
 				label = "firmware";
-				reg = <0x050000 0xfb0000>; /* 16064 KiB */
+				reg = <0x050000 0xfb0000>;
 			};
 		};
 	};
 };
 
 &gmac0 {
-	phy-mode = "rgmii-rxid";
 	nvmem-cells = <&macaddr_factory_e000>;
 	nvmem-cell-names = "mac-address";
 };
 
 &gmac1 {
-	status = "disabled";
+	status = "okay";
+	label = "wan";
+	phy-handle = <&phy4>;
+
+	nvmem-cells = <&macaddr_factory_e006>;
+	nvmem-cell-names = "mac-address";
+};
+
+&mdio {
+	phy0: ethernet-phy@0 {
+		reg = <0>;
+		phy-mode = "rgmii-rxid";
+	};
+	phy1: ethernet-phy@1 {
+		reg = <1>;
+		phy-mode = "rgmii-rxid";
+	};
+	phy2: ethernet-phy@2 {
+		reg = <2>;
+		phy-mode = "rgmii-rxid";
+	};
+	phy3: ethernet-phy@3 {
+		reg = <3>;
+		phy-mode = "rgmii-rxid";
+	};
+	phy4: ethernet-phy@4 {
+		reg = <4>;
+		phy-mode = "rgmii-rxid";
+	};
 };
 
 &switch0 {
 	ports {
 		port@0 {
 			status = "okay";
-			label = "wan";
-		};
-
-		port@1 {
-			status = "okay";
 			label = "lan1";
 		};
-
-		port@2 {
+		port@1 {
 			status = "okay";
 			label = "lan2";
 		};
-
-		port@3 {
+		port@2 {
 			status = "okay";
 			label = "lan3";
 		};
-
-		port@4 {
+		port@3 {
 			status = "okay";
 			label = "lan4";
 		};
 	};
 };
 
-/* mini-PCIe 无线：AR9382 双频 ath9k，校准数据在网卡 EEPROM */
 &pcie {
 	status = "okay";
 };
@@ -162,14 +163,16 @@
 	status = "okay";
 };
 
-&state_default {
-	gpio {
-		groups = "jtag", "rgmii2", "wdt";
-		function = "gpio";
-	};
-};
+&factory {
+	compatible = "nvmem-cells";
+	#address-cells = <1>;
+	#size-cells = <1>;
 
-&ethernet {
-	pinctrl-names = "default";
-	pinctrl-0 = <&rgmii1_pins &mdio_pins>;
+	macaddr_factory_e000: macaddr@e000 {
+		reg = <0xe000 0x6>;
+	};
+
+	macaddr_factory_e006: macaddr@e006 {
+		reg = <0xe006 0x6>;
+	};
 };
