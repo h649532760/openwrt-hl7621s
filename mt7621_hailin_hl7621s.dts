@@ -18,8 +18,9 @@
 
     // ========== 核心修改：补全启动参数兜底 ==========
 	chosen {
-		bootargs = "console=ttyS0,115200 root=/dev/mtdblock3 rootfstype=squashfs init=/init";
-	};
+    bootargs = "console=ttyS0,115200";
+};
+
     // ==============================================
 
 	leds {
